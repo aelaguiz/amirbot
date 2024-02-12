@@ -30,7 +30,7 @@ class WriteEmailFromTranscript(dspy.Module):
     def __init__(self):
         self.write_email = dspy.ChainOfThought(GenerateEmailFromTranscript, max_tokens=1000)
 
-    def forward(self, notes):
+    def forward(self, notes, email_subject, email_to, email_from):
         email_body = self.write_email(notes=notes)
 
         return email_body
@@ -43,37 +43,43 @@ class AssessEmail(dspy.Signature):
     assessment_score = dspy.OutputField(desc="The evaluator's answer (yes or no) if the evaluated criteria is true.")
 
 def email_style_and_accuracy_score(example, pred, trace=None):
-    factual_accuracy = "Does the generated email accurately present facts, figures, and key points from the actual email? Answer 'yes' if it does without any errors or omissions, otherwise 'no'."
-    nuance_context = "Does the generated email capture and convey the nuances, implied meanings, and contextual subtleties of the actual email? Answer 'yes' if it perfectly reflects the subtleties and context of the actual email, otherwise 'no'."
-    stylistic_alignment = "Does the generated email align with the author's typical tone, voice, language, and phraseology as exhibited in the actual email? Answer 'yes' if the generated email is indistinguishable from the author's own writing in the actual email, otherwise 'no'."
-    coherence_clarity = "Is the generated email coherent and clear in comparison to the actual email? Answer 'yes' if it matches the exceptional organization, logic, and ease of understanding of the actual email, otherwise 'no'."
-    content_length = "Does the generated email adhere to the actual email's length and level of detail? Answer 'yes' if it conveys the message with a similar amount of content, otherwise 'no'."
-    formality_tone = "Does the generated email match the formality and tone of the actual email? Answer 'yes' if there is a perfect alignment in the level of formality and tone, otherwise 'no'."
-    structural_alignment = "Does the generated email mirror the actual email's structure, including paragraph organization and sentence structure? Answer 'yes' if there is a structural resemblance, otherwise 'no'."
-    detail_appropriateness = "Does the generated email include just the right amount of detail to effectively convey the message, similar to the actual email? Answer 'yes' if the level of detail is appropriate, otherwise 'no'."
+    try:
+        factual_accuracy = "Does the generated email accurately present facts, figures, and key points from the actual email? Answer 'yes' if it does without any errors or omissions, otherwise 'no'."
+        nuance_context = "Does the generated email capture and convey the nuances, implied meanings, and contextual subtleties of the actual email? Answer 'yes' if it perfectly reflects the subtleties and context of the actual email, otherwise 'no'."
+        stylistic_alignment = "Does the generated email align with the author's typical tone, voice, language, and phraseology as exhibited in the actual email? Answer 'yes' if the generated email is indistinguishable from the author's own writing in the actual email, otherwise 'no'."
+        coherence_clarity = "Is the generated email coherent and clear in comparison to the actual email? Answer 'yes' if it matches the exceptional organization, logic, and ease of understanding of the actual email, otherwise 'no'."
+        content_length = "Does the generated email adhere to the actual email's length and level of detail? Answer 'yes' if it conveys the message with a similar amount of content, otherwise 'no'."
+        formality_tone = "Does the generated email match the formality and tone of the actual email? Answer 'yes' if there is a perfect alignment in the level of formality and tone, otherwise 'no'."
+        structural_alignment = "Does the generated email mirror the actual email's structure, including paragraph organization and sentence structure? Answer 'yes' if there is a structural resemblance, otherwise 'no'."
+        detail_appropriateness = "Does the generated email include just the right amount of detail to effectively convey the message, similar to the actual email? Answer 'yes' if the level of detail is appropriate, otherwise 'no'."
 
-    with dspy.context(lm=turbo):
-        fa_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=factual_accuracy)
-        nc_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=nuance_context)
-        sa_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=stylistic_alignment)
-        cc_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=coherence_clarity)
-        cl_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=content_length)
-        ft_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=formality_tone)
-        stra_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=structural_alignment)
-        da_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=detail_appropriateness)
+        with dspy.context(lm=turbo):
+            fa_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=factual_accuracy)
+            nc_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=nuance_context)
+            sa_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=stylistic_alignment)
+            cc_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=coherence_clarity)
+            cl_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=content_length)
+            ft_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=formality_tone)
+            stra_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=structural_alignment)
+            da_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=detail_appropriateness)
 
-    # Convert 'yes' answers to 1, and 'no' answers to 0
-    scores = [(1 if m.assessment_score.split()[0].lower() == 'yes' else 0) for m in [fa_score, nc_score, sa_score, cc_score, cl_score, ft_score, stra_score, da_score]]
-    total_yes = sum(scores)
-    
-    # Logging for debug purposes
-    logging.debug(f"Notes: {example.notes}")
-    logging.debug(f"Actual Email: {example.email_body}")
-    logging.debug(f"Generated Email: {pred.email_body}")
-    logging.debug(f"Assessment Results: Factual Accuracy = {fa_score.assessment_score}, Nuance and Context = {nc_score.assessment_score}, Stylistic Alignment = {sa_score.assessment_score}, Coherence and Clarity = {cc_score.assessment_score}, Content Length = {cl_score.assessment_score}, Formality and Tone = {ft_score.assessment_score}, Structural Alignment = {stra_score.assessment_score}, Detail Appropriateness = {da_score.assessment_score}")
-    logging.debug(f"Total 'Yes' Responses = {total_yes}")
+        # Convert 'yes' answers to 1, and 'no' answers to 0
+        scores = [(1 if m.assessment_score.split()[0].lower() == 'yes' else 0) for m in [fa_score, nc_score, sa_score, cc_score, cl_score, ft_score, stra_score, da_score]]
+        total_yes = sum(scores)
+        
+        # Logging for debug purposes
+        logging.debug(f"Notes: {example.notes}")
+        logging.debug(f"Actual Email: {example.email_body}")
+        logging.debug(f"Generated Email: {pred.email_body}")
+        logging.debug(f"Assessment Results: Factual Accuracy = {fa_score.assessment_score}, Nuance and Context = {nc_score.assessment_score}, Stylistic Alignment = {sa_score.assessment_score}, Coherence and Clarity = {cc_score.assessment_score}, Content Length = {cl_score.assessment_score}, Formality and Tone = {ft_score.assessment_score}, Structural Alignment = {stra_score.assessment_score}, Detail Appropriateness = {da_score.assessment_score}")
+        logging.debug(f"Total 'Yes' Responses = {total_yes}")
 
-    return total_yes / len(scores)
+        return total_yes / len(scores)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        logging.exception(f"Failed to evaluate the generated email: {e}")
 
 
 def main():
@@ -81,19 +87,20 @@ def main():
     model_path = sys.argv[2]
 
     with open(training_data_file, "rb") as f:
-        training_data = pickle.load(f)
+        _training_data = pickle.load(f)
 
 
-    # training_data = []
-    # for example in _training_data:
-    #     if "--- forwarded message" in example.email_body.lower():
-    #         continue
-    #     training_data.append(
-    #         dspy.Example(
-    #             transcript=example.transcript,
-    #             email_body=example.email_body
-    #         ).with_inputs("transcript")
-    #     )
+    training_data = []
+    for example in _training_data:
+        training_data.append(
+            dspy.Example(
+                notes=example.notes,
+                email_body=example.email_body,
+                email_subject=example.email_subject,
+                email_to=example.email_to,
+                email_from=example.email_from
+            ).with_inputs("notes", "email_subject", "email_to", "email_from")
+        )
 
     random.shuffle(training_data)
 
