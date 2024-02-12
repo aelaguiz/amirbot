@@ -28,10 +28,11 @@ class GenerateEmailFromTranscript(dspy.Signature):
 
 class WriteEmailFromTranscript(dspy.Module):
     def __init__(self):
-        self.write_email = dspy.ChainOfThought(GenerateEmailFromTranscript, max_tokens=1000)
+        self.write_email = dspy.Predict(GenerateEmailFromTranscript)
 
     def forward(self, notes, email_subject, email_to, email_from):
-        email_body = self.write_email(notes=notes)
+        with dspy.context(lm=gpt4):
+            email_body = self.write_email(notes=notes)
 
         return email_body
 
@@ -114,8 +115,8 @@ def main():
     model = WriteEmailFromTranscript()
 
     evaluator = Evaluate(devset=test_set, num_threads=4, display_progress=True, display_table=False, metric=email_style_and_accuracy_score)
-    avg_score = evaluator(model)
-    logging.info(f"BEFORE OPTIMIZATION EVALUATION: {avg_score}%")
+    # avg_score = evaluator(model)
+    # logging.info(f"BEFORE OPTIMIZATION EVALUATION: {avg_score}%")
 
     optimizer = BootstrapFewShotWithRandomSearch(metric=email_style_and_accuracy_score, num_threads=8, num_candidate_programs=3, max_bootstrapped_demos=3, teacher_settings=dict(lm=gpt4))
     compiled_model = optimizer.compile(model, trainset=train_set, valset=validate_set)

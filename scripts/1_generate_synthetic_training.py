@@ -58,10 +58,16 @@ def get_training_examples(email_inputs):
         if email_subject.lower().startswith("re: ") or email_subject.lower().startswith("fwd: ") or "--- forwarded message --- " in email_body:
             continue
 
+        parts_body = email_body.split(" ")
+        num_words = len(parts_body)
+        parts_body = parts_body[:500]
+
+        logger.info(f"Processing e-mail: {email_subject} - {num_words} words, truncated to {len(parts_body)} words")
+        email_body = " ".join(parts_body)
+
         email_to = email['to']
         email_from = email['from']
 
-        logger.debug(f"Processing e-mail: {email_subject}")
 
         yield dspy.Example(email_body=email_body, email_subject=email_subject, email_to=email_to, email_from=email_from, notes="").with_inputs("email_body", "email_subject", "email_from", "email_to")
 
@@ -158,8 +164,7 @@ def main():
     # with open(training_output, "wb") as f:
     #     pickle.dump(ready_training, f)
     with ThreadPoolExecutor(max_workers=8) as executor:
-        training = list(get_training_examples(email_inputs))
-        future_to_example = {executor.submit(process_example, example, compiled_model): example for example in training[:200]}
+        future_to_example = {executor.submit(process_example, example, compiled_model): example for example in training_data[:200]}
 
         ready_training = []
 
