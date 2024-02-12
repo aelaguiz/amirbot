@@ -32,21 +32,20 @@ class GenerateSyntheticNotesfromEmail2(dspy.Signature):
 
 class MakeSyntheticTrainingData(dspy.Module):
     def __init__(self):
-        self.generate_notes = dspy.ChainOfThought(GenerateSyntheticNotesfromEmail, temperature=0.7, max_tokens=1000)
-        self.generate_notes2 = dspy.ChainOfThought(GenerateSyntheticNotesfromEmail2, temperature=0.7, max_tokens=1000)
-        self.generate_notes3 = dspy.ChainOfThought(GenerateSyntheticNotesfromEmail2, temperature=0.7, max_tokens=1000)
-        self.generate_notes4 = dspy.ChainOfThought(GenerateSyntheticNotesfromEmail2, temperature=0.7, max_tokens=1000)
+        self.generate_notes = dspy.ChainOfThought(GenerateSyntheticNotesfromEmail)
+        self.generate_notes2 = dspy.ChainOfThought(GenerateSyntheticNotesfromEmail2)
         
     def forward(self, email_body, email_subject, email_from, email_to):
-        notes = self.generate_notes(email_body=email_body)
+        with dspy.context(lm=turbo):
+            notes = self.generate_notes(email_body=email_body)
 
-        for model in [self.generate_notes2, self.generate_notes3, self.generate_notes4]:
-            prev_notes = notes.synthetic_notes
-            notes = model(input_notes=notes.synthetic_notes)
+            for model in [self.generate_notes2]:
+                prev_notes = notes.synthetic_notes
+                notes = model(input_notes=notes.synthetic_notes)
 
-            dspy.Suggest(len(notes.synthetic_notes) > len(prev_notes) * 1.5, "The synthetic notes should be at least 1.5 times longer than the previous notes.")
+                dspy.Suggest(len(notes.synthetic_notes) > len(prev_notes) * 1.5, "The synthetic notes should be at least 1.5 times longer than the previous notes.")
 
-        return notes
+            return notes
 
 def get_training_examples(email_inputs):
     for line in open(email_inputs):
@@ -85,35 +84,46 @@ class AssessNotes(dspy.Signature):
     assessment_score = dspy.OutputField(desc="The evaluator's answer (yes or no) if the evaluated criteria is true.")
 
 def email_notes_comprehensiveness_score(example, pred, trace=None):
-    # Check if the notes contain all the information from the email and additional context
-    completeness = "Do the notes contain all the essential information from the actual email as well as additional details and context that provide a fuller understanding? Answer 'yes' if they do, otherwise 'no'."
-    
-    # Check if the facts in the notes and the email align
-    factual_alignment = "Do the notes maintain factual alignment with the actual email, ensuring that all figures, facts, and key points match? Answer 'yes' if there is perfect factual alignment, otherwise 'no'."
-    
-    # Check if the notes are sufficiently detailed compared to the email
-    detail_ratio = "Are the notes at least 1.5 to 2 times more detailed than the actual email, providing an expanded view of the information and context? Answer 'yes' if they are sufficiently detailed, otherwise 'no'."
+    # logger.debug(f"Assessing notes for e-mail: {example} Predicted notes: {pred}")
+    try:
+        # Check if the notes contain all the information from the email and additional context
+        completeness = "Are all of the key-points and facts from the actual e-mail present in the notes? Answer 'yes' if they do, otherwise 'no'."
+        
+        # Check if the facts in the notes and the email align
+        factual_alignment = "Are all of the key-points and facts from the actual e-mail factually aligned with the notes? Answer 'yes' if there is perfect factual alignment, otherwise 'no'."
+        
+        # Check if the notes are sufficiently detailed compared to the email
+        detail_ratio = "Are the notes at least 1.5 to 2 times longer than the actual email, providing an expanded view of the information and context? Answer 'yes' if they are sufficiently detailed, otherwise 'no'."
 
-    # Check the personal and reflective writing style in the notes
-    personal_tone = "Do the notes reflect a personal and reflective writing style, as if explaining the email's content to oneself with added insights and interpretations? Answer 'yes' if the tone is personal and reflective, otherwise 'no'."
+        # Check the personal and reflective writing style in the notes
+        personal_tone = "Do the notes reflect a personal and reflective writing style, as if explaining the email's content to oneself with added insights and interpretations? Answer 'yes' if the tone is personal and reflective, otherwise 'no'."
 
-    with dspy.context(lm=turbo, temperature=0.5):
-        com_score = dspy.Predict(AssessNotes)(notes=pred.synthetic_notes, actual_email=example.email_body, assessment_question=completeness)
-        fa_score = dspy.Predict(AssessNotes)(notes=pred.synthetic_notes, actual_email=example.email_body, assessment_question=factual_alignment)
-        dr_score = dspy.Predict(AssessNotes)(notes=pred.synthetic_notes, actual_email=example.email_body, assessment_question=detail_ratio)
-        pt_score = dspy.Predict(AssessNotes)(notes=pred.synthetic_notes, actual_email=example.email_body, assessment_question=personal_tone)
+        with dspy.context(lm=turbo):
+            com_score = dspy.Predict(AssessNotes)(generated_notes=pred.synthetic_notes, actual_email=example.email_body, assessment_question=completeness)
+            fa_score = dspy.Predict(AssessNotes)(generated_notes=pred.synthetic_notes, actual_email=example.email_body, assessment_question=factual_alignment)
+            dr_score = dspy.Predict(AssessNotes)(generated_notes=pred.synthetic_notes, actual_email=example.email_body, assessment_question=detail_ratio)
+            pt_score = dspy.Predict(AssessNotes)(generated_notes=pred.synthetic_notes, actual_email=example.email_body, assessment_question=personal_tone)
 
-    # Convert 'yes' answers to 1, and 'no' answers to 0
-    scores = [(1 if m.assessment_score.split()[0].lower() == 'yes' else 0) for m in [com_score, fa_score, dr_score, pt_score]]
-    total_yes = sum(scores)
-    
-    # Logging for debug purposes
-    logging.debug(f"Notes: {pred.synthetic_notes}")
-    logging.debug(f"Actual Email: {example.email_body}")
-    logging.info(f"Assessment Results: Completeness = {com_score.assessment_score}, Factual Alignment = {fa_score.assessment_score}, Detail Ratio = {dr_score.assessment_score}, Personal Tone = {pt_score.assessment_score}")
-    logging.info(f"Total 'Yes' Responses = {total_yes}")
+        # Convert 'yes' answers to 1, and 'no' answers to 0
+        scores = [(1 if m.assessment_score.split()[0].lower() == 'yes' else 0) for m in [com_score, fa_score, dr_score, pt_score]]
+        # logger.debug(dr_score)
+        # scores = [(1 if m.assessment_score.split()[0].lower() == 'yes' else 0) for m in [dr_score]]
+        total_yes = sum(scores)
+        
+        # Logging for debug purposes
+        logging.debug(f"Notes: {pred.synthetic_notes}")
+        logging.debug(f"Actual Email: {example.email_body}")
+        logging.info(f"Assessment Results: Completeness = {com_score.assessment_score}, Factual Alignment = {fa_score.assessment_score}, Detail Ratio = {dr_score.assessment_score}, Personal Tone = {pt_score.assessment_score}")
+        # logging.info(f"Detail Ratio = {dr_score.assessment_score}")
+        score = total_yes / len(scores)
+        logging.info(f"Total 'Yes' Responses = {total_yes} - Score = {score}")
 
-    return total_yes / len(scores)
+        return score
+    except:
+        import traceback
+        traceback.print_exc()
+        logging.exception(f"Failed to assess notes for e-mail: {example} Predicted notes: {pred}")
+        return 0
 
 
 def main():
@@ -130,9 +140,13 @@ def main():
     model = MakeSyntheticTrainingData()
     dspy.assert_transform_module(model)
 
+    # example = train_set[0]
+    # pred = model(email_body=example.email_body, email_subject=example.email_subject, email_from=example.email_from, email_to=example.email_to)
+    # email_notes_comprehensiveness_score(example, pred)
+
     evaluator = Evaluate(devset=test_set, num_threads=8, display_progress=True, display_table=False, metric=email_notes_comprehensiveness_score)
-    avg_score = evaluator(model)
-    logging.info(f"BEFORE OPTIMIZATION EVALUATION: {avg_score}%")
+    # avg_score = evaluator(model)
+    # logging.info(f"BEFORE OPTIMIZATION EVALUATION: {avg_score}%")
 
     optimizer = BootstrapFewShotWithRandomSearch(metric=email_notes_comprehensiveness_score, num_threads=8, num_candidate_programs=3, max_bootstrapped_demos=3, teacher_settings=dict(lm=gpt4))
     compiled_model = optimizer.compile(model, trainset=train_set, valset=validate_set)
