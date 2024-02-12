@@ -13,8 +13,8 @@ def init_env_logging(env_path):
 
     # Use the configuration file appropriate to the environment
     logging.config.fileConfig(config_path)
-    # logging.getLogger("httpx").setLevel(logging.CRITICAL)
-    # logging.getLogger("openai").setLevel(logging.CRITICAL)
-    # logging.getLogger("httpcore.connection").setLevel(logging.CRITICAL)
-    # logging.getLogger("httpcore.http11").setLevel(logging.CRITICAL)
-    # logging.getLogger("openai._base_client").setLevel(logging.CRITICAL)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.DEBUG)
+    logging.getLogger("httpcore.connection").setLevel(logging.DEBUG)
+    logging.getLogger("httpcore.http11").setLevel(logging.DEBUG)
+    logging.getLogger("openai._base_client").setLevel(logging.DEBUG)

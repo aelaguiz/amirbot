@@ -1,8 +1,7 @@
 import sys
-
-import pickle
 sys.path.append('.')
 
+import pickle
 from amirbot import ai_tools
 import json
 import logging
@@ -23,23 +22,22 @@ import random
 
 
 class GenerateEmailFromTranscript(dspy.Signature):
-    transcript = dspy.InputField(desc="The transcript of audio notes that should be used when constructing the e-mail.")
+    notes = dspy.InputField(desc="The notes that should be used when constructing the e-mail.")
 
-    email_body = dspy.OutputField(desc="An e-mail written from the transcript that is well written, captures the points and supporting nuance from the transcript and is written in the style of the speaker based on their previous e-mails.")
+    email_body = dspy.OutputField(desc="An e-mail written from the transcript that is well written, captures the key business spoints and important nuance from the notes and is written in the style of the speaker based on their previous e-mails.")
 
 class WriteEmailFromTranscript(dspy.Module):
     def __init__(self):
         self.write_email = dspy.ChainOfThought(GenerateEmailFromTranscript, max_tokens=1000)
 
-    def forward(self, transcript):
-        with dspy.context(lm=gpt4):
-            email_body = self.write_email(transcript=transcript)
+    def forward(self, notes):
+        email_body = self.write_email(notes=notes)
 
         return email_body
 
 class AssessEmail(dspy.Signature):
-    transcript = dspy.InputField(desc="The original transcript used as a basis for generating the email.")
-    generated_email = dspy.InputField(desc="The AI-generated email intended to reflect the transcript's content and the author's style. This is the email that is being evaluated.")
+    notes = dspy.InputField(desc="The original notes used as a basis for generating the email.")
+    generated_email = dspy.InputField(desc="The AI-generated email intended to reflect the note's content and the author's style. This is the email that is being evaluated.")
     actual_email = dspy.InputField(desc="The actual email written by the author, used as a benchmark for evaluating the generated email's quality and style. The generated email should be compared to this email.")
     assessment_question = dspy.InputField(desc="A targeted question guiding the evaluation of the generated email against against the actual e-mail.")
     assessment_score = dspy.OutputField(desc="The evaluator's answer (yes or no) if the evaluated criteria is true.")
@@ -55,21 +53,21 @@ def email_style_and_accuracy_score(example, pred, trace=None):
     detail_appropriateness = "Does the generated email include just the right amount of detail to effectively convey the message, similar to the actual email? Answer 'yes' if the level of detail is appropriate, otherwise 'no'."
 
     with dspy.context(lm=turbo):
-        fa_score = dspy.Predict(AssessEmail)(transcript=example.transcript, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=factual_accuracy)
-        nc_score = dspy.Predict(AssessEmail)(transcript=example.transcript, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=nuance_context)
-        sa_score = dspy.Predict(AssessEmail)(transcript=example.transcript, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=stylistic_alignment)
-        cc_score = dspy.Predict(AssessEmail)(transcript=example.transcript, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=coherence_clarity)
-        cl_score = dspy.Predict(AssessEmail)(transcript=example.transcript, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=content_length)
-        ft_score = dspy.Predict(AssessEmail)(transcript=example.transcript, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=formality_tone)
-        stra_score = dspy.Predict(AssessEmail)(transcript=example.transcript, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=structural_alignment)
-        da_score = dspy.Predict(AssessEmail)(transcript=example.transcript, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=detail_appropriateness)
+        fa_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=factual_accuracy)
+        nc_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=nuance_context)
+        sa_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=stylistic_alignment)
+        cc_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=coherence_clarity)
+        cl_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=content_length)
+        ft_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=formality_tone)
+        stra_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=structural_alignment)
+        da_score = dspy.Predict(AssessEmail)(notes=example.notes, generated_email=pred.email_body, actual_email=example.email_body, assessment_question=detail_appropriateness)
 
     # Convert 'yes' answers to 1, and 'no' answers to 0
     scores = [(1 if m.assessment_score.split()[0].lower() == 'yes' else 0) for m in [fa_score, nc_score, sa_score, cc_score, cl_score, ft_score, stra_score, da_score]]
     total_yes = sum(scores)
     
     # Logging for debug purposes
-    logging.debug(f"Transcript: {example.transcript}")
+    logging.debug(f"Notes: {example.notes}")
     logging.debug(f"Actual Email: {example.email_body}")
     logging.debug(f"Generated Email: {pred.email_body}")
     logging.debug(f"Assessment Results: Factual Accuracy = {fa_score.assessment_score}, Nuance and Context = {nc_score.assessment_score}, Stylistic Alignment = {sa_score.assessment_score}, Coherence and Clarity = {cc_score.assessment_score}, Content Length = {cl_score.assessment_score}, Formality and Tone = {ft_score.assessment_score}, Structural Alignment = {stra_score.assessment_score}, Detail Appropriateness = {da_score.assessment_score}")
@@ -83,26 +81,26 @@ def main():
     model_path = sys.argv[2]
 
     with open(training_data_file, "rb") as f:
-        _training_data = pickle.load(f)
+        training_data = pickle.load(f)
 
 
-    training_data = []
-    for example in _training_data:
-        if "--- forwarded message" in example.email_body.lower():
-            continue
-        training_data.append(
-            dspy.Example(
-                transcript=example.transcript,
-                email_body=example.email_body
-            ).with_inputs("transcript")
-        )
+    # training_data = []
+    # for example in _training_data:
+    #     if "--- forwarded message" in example.email_body.lower():
+    #         continue
+    #     training_data.append(
+    #         dspy.Example(
+    #             transcript=example.transcript,
+    #             email_body=example.email_body
+    #         ).with_inputs("transcript")
+    #     )
 
     random.shuffle(training_data)
 
-    _train_set, _validate_set, _test_set = ai_tools.split_dataset(training_data, 0.8, 0.1, 0.1)
-    train_set = _train_set[:20]
-    test_set = _test_set[:5]
-    validate_set = _validate_set[:5]
+    train_set, validate_set, test_set = ai_tools.split_dataset(training_data, 0.8, 0.1, 0.1)
+    # train_set = _train_set[:20]
+    # test_set = _test_set[:5]
+    # validate_set = _validate_set[:5]
 
     logger.debug(f"Training set size: {len(train_set)}, Validation set size: {len(validate_set)}, Test set size: {len(test_set)}")
 
